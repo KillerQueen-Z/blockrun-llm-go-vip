@@ -56,8 +56,10 @@ func WithAPIKey(key string) Option {
 	return func(c *config) { c.apiKey = key }
 }
 
-// resolve applies options and loads the signing key.
-func resolve(opts ...Option) (cfg config, priv *ecdsa.PrivateKey, err error) {
+// resolveKey applies options and resolves the wallet key as a hex string. The
+// media clients (Video / RealFace / Portrait) reuse blockrun-llm-go's clients,
+// which take the hex key directly.
+func resolveKey(opts ...Option) (cfg config, hexKey string, err error) {
 	cfg = config{
 		apiURL: blockrun.DefaultAPIURL,
 		apiKey: apiKeySentinel,
@@ -66,12 +68,22 @@ func resolve(opts ...Option) (cfg config, priv *ecdsa.PrivateKey, err error) {
 		o(&cfg)
 	}
 
-	hexKey := cfg.privHex
+	hexKey = cfg.privHex
 	if hexKey == "" {
 		hexKey, err = blockrun.LoadWallet()
 		if err != nil {
-			return cfg, nil, fmt.Errorf("vip: no wallet key (set BLOCKRUN_WALLET_KEY or ~/.blockrun/.session, or pass WithWalletKey): %w", err)
+			return cfg, "", fmt.Errorf("vip: no wallet key (set BLOCKRUN_WALLET_KEY or ~/.blockrun/.session, or pass WithWalletKey): %w", err)
 		}
+	}
+	return cfg, hexKey, nil
+}
+
+// resolve applies options and loads the signing key as an *ecdsa.PrivateKey for
+// the x402 middleware used by the Anthropic / OpenAI passthrough clients.
+func resolve(opts ...Option) (cfg config, priv *ecdsa.PrivateKey, err error) {
+	cfg, hexKey, err := resolveKey(opts...)
+	if err != nil {
+		return cfg, nil, err
 	}
 
 	priv, err = blockrun.GetPrivateKeyFromHex(hexKey)

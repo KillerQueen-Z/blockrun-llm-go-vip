@@ -67,8 +67,38 @@ resp, _ := gpt.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 fmt.Println(resp.SystemFingerprint, resp.Model)   // genuine OpenAI direct
 ```
 
-Runnable examples: [`examples/anthropic`](examples/anthropic) and
-[`examples/openai`](examples/openai).
+Runnable examples: [`examples/anthropic`](examples/anthropic),
+[`examples/openai`](examples/openai), and [`examples/seedance`](examples/seedance).
+
+## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
+
+Generate short videos through **ByteDance Seedance**. `Video.Generate(...)` runs the
+async submit→poll loop (x402-paid both legs by the same wallet) and returns the
+gateway's verbatim completed-job JSON — `Data[0].URL` is a permanent BlockRun-hosted
+MP4. These are not official-SDK passthrough (there is no upstream SDK to subclass) —
+they reuse blockrun-llm-go's gateway clients, already x402-paid on Base.
+
+```go
+video, _ := vip.NewVideo()
+job, _ := video.Generate(ctx, "a neon-lit cyberpunk street, slow dolly forward",
+    &vip.VideoGenerateOptions{Model: "bytedance/seedance-2.0-fast", DurationSeconds: 5})
+fmt.Println(job.Data[0].URL)
+```
+
+A specific, real person can appear consistently across clips: **enroll once** via
+**RealFace** (one-time $0.01, ~1-min on-phone liveness for consent, no KYC), get a
+`ta_xxxx`, and pass it as `RealFaceAssetID` on Seedance 2.0 / 2.0-fast. For an AI
+character / mascot use **Portrait** instead (single enroll, no liveness).
+
+```go
+portrait, _ := vip.NewPortrait()
+asset, _ := portrait.Enroll(ctx, "Mascot", "https://example.com/character.jpg") // $0.01
+job, _ := video.Generate(ctx, "the mascot waves in soft studio light",
+    &vip.VideoGenerateOptions{Model: "bytedance/seedance-2.0", RealFaceAssetID: asset.AssetID})
+```
+
+`RealFaceAssetID` is mutually exclusive with `ImageURL` and only works on Seedance
+2.0 / 2.0-fast. Constructors: `vip.NewVideo`, `vip.NewRealFace`, `vip.NewPortrait`.
 
 ## Options
 
@@ -110,9 +140,9 @@ parsing — that is what makes the passthrough native.
 
 ## Scope
 
-This first release covers **Anthropic + OpenAI on Base**. Solana payment and the
-Video / RealFace / VirtualPortrait clients from the Python VIP package are not yet
-ported.
+Covers **Anthropic + OpenAI native passthrough** and **Seedance video (incl.
+RealFace real-person and Virtual Portrait)**, all on **Base**. Solana payment
+(`chain="solana"` in the Python VIP package) is not yet ported.
 
 ## Access
 
