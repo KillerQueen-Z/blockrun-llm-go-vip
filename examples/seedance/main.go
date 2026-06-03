@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	vip "github.com/BlockRunAI/blockrun-llm-go-vip"
 )
@@ -22,13 +23,16 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// ---- 1. Plain text-to-video (Seedance) ----
+	// ---- 1. Plain text-to-video (Seedance), async submit→poll ----
 	video, err := vip.NewVideo()
 	if err != nil {
 		log.Fatal(err)
 	}
 	dur := 5
-	job, err := video.Generate(ctx, "a neon-lit cyberpunk street, slow dolly forward", &vip.VideoGenerateOptions{
+
+	// Submit returns immediately (this is the x402-paid leg); generation runs
+	// asynchronously on the gateway.
+	job, err := video.Submit(ctx, "a neon-lit cyberpunk street, slow dolly forward", &vip.VideoGenerateOptions{
 		Model:           "bytedance/seedance-2.0-fast",
 		DurationSeconds: dur,
 		Resolution:      "720p",
@@ -36,8 +40,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(job.Data) > 0 {
-		fmt.Println("video:", job.Data[0].URL) // permanent BlockRun-hosted MP4
+	fmt.Println("submitted:", job.ID, "status:", job.Status)
+
+	// Poll yourself...
+	for !job.Done() {
+		time.Sleep(12 * time.Second)
+		if err := video.Poll(ctx, job); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("status:", job.Status)
+	}
+	// ...or just call video.Wait(ctx, job) to block until done.
+	if job.Response != nil && len(job.Response.Data) > 0 {
+		fmt.Println("video:", job.Response.Data[0].URL) // permanent BlockRun-hosted MP4
 	}
 
 	// ---- 2. AI character / mascot via Virtual Portrait (no liveness, $0.01) ----

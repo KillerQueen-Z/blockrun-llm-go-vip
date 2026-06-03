@@ -73,18 +73,28 @@ Runnable examples: [`examples/anthropic`](examples/anthropic),
 ## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
 
 Generate short videos through **ByteDance Seedance**. The gateway runs generation
-asynchronously, so `Video.Generate(...)` submits the job and then polls the returned
-`poll_url` (re-signing x402 each time, same wallet) until it completes — returning the
-gateway's verbatim completed-job JSON. `Data[0].URL` is a permanent BlockRun-hosted MP4.
-`Video` is implemented natively in this package; `RealFace` and `Portrait` reuse
-blockrun-llm-go's gateway clients. All x402-paid on Base.
+asynchronously, and the client mirrors that — `Submit` returns immediately (it is the
+x402-paid leg), then you `Poll` or `Wait`:
 
 ```go
 video, _ := vip.NewVideo()
-job, _ := video.Generate(ctx, "a neon-lit cyberpunk street, slow dolly forward",
+
+// Async: submit returns a job handle without blocking.
+job, _ := video.Submit(ctx, "a neon-lit cyberpunk street, slow dolly forward",
     &vip.VideoGenerateOptions{Model: "bytedance/seedance-2.0-fast", DurationSeconds: 5})
-fmt.Println(job.Data[0].URL)
+fmt.Println(job.ID, job.Status) // e.g. "bytedance:video_…", "queued"
+
+for !job.Done() {
+    time.Sleep(12 * time.Second)
+    video.Poll(ctx, job) // re-signs x402, advances job.Status
+}
+fmt.Println(job.Response.Data[0].URL) // permanent BlockRun-hosted MP4
 ```
+
+`video.Wait(ctx, job)` blocks until done, and `video.Generate(ctx, prompt, opts)` is
+shorthand for `Submit`+`Wait` (one blocking call). `Video` is implemented natively in
+this package; `RealFace` and `Portrait` reuse blockrun-llm-go's gateway clients. All
+x402-paid on Base.
 
 A specific, real person can appear consistently across clips: **enroll once** via
 **RealFace** (one-time $0.01, ~1-min on-phone liveness for consent, no KYC), get a
