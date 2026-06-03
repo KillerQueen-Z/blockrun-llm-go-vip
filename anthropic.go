@@ -1,0 +1,35 @@
+package vip
+
+import (
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
+)
+
+// NewAnthropic returns the official anthropic-sdk-go client wired for BlockRun
+// native passthrough: requests are routed to the gateway's /v1/messages and
+// paid per call via x402, while responses are parsed by the official SDK
+// byte-for-byte (real thinking-block signatures, native content blocks, cache
+// usage, signature_delta streaming).
+//
+// Use it exactly like the official SDK:
+//
+//	client, err := vip.NewAnthropic()
+//	if err != nil { ... }
+//	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+//	    Model:     anthropic.ModelClaudeSonnet4_5,
+//	    MaxTokens: 1024,
+//	    Messages:  []anthropic.MessageParam{
+//	        anthropic.NewUserMessage(anthropic.NewTextBlock("What is 23*47?")),
+//	    },
+//	})
+func NewAnthropic(opts ...Option) (anthropic.Client, error) {
+	cfg, priv, err := resolve(opts...)
+	if err != nil {
+		return anthropic.Client{}, err
+	}
+	return anthropic.NewClient(
+		option.WithBaseURL(cfg.apiURL),
+		option.WithAPIKey(cfg.apiKey),
+		option.WithMiddleware(x402Middleware(priv)),
+	), nil
+}
