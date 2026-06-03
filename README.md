@@ -72,11 +72,12 @@ Runnable examples: [`examples/anthropic`](examples/anthropic),
 
 ## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
 
-Generate short videos through **ByteDance Seedance**. `Video.Generate(...)` runs the
-async submit→poll loop (x402-paid both legs by the same wallet) and returns the
-gateway's verbatim completed-job JSON — `Data[0].URL` is a permanent BlockRun-hosted
-MP4. These are not official-SDK passthrough (there is no upstream SDK to subclass) —
-they reuse blockrun-llm-go's gateway clients, already x402-paid on Base.
+Generate short videos through **ByteDance Seedance**. The gateway runs generation
+asynchronously, so `Video.Generate(...)` submits the job and then polls the returned
+`poll_url` (re-signing x402 each time, same wallet) until it completes — returning the
+gateway's verbatim completed-job JSON. `Data[0].URL` is a permanent BlockRun-hosted MP4.
+`Video` is implemented natively in this package; `RealFace` and `Portrait` reuse
+blockrun-llm-go's gateway clients. All x402-paid on Base.
 
 ```go
 video, _ := vip.NewVideo()

@@ -14,11 +14,9 @@ import (
 // and the same wallet.
 
 // Client types, re-exported so callers never import blockrun-llm-go directly.
+// (Video is a native VIP type in video.go — it implements the gateway's async
+// submit→poll flow that blockrun-llm-go's VideoClient does not.)
 type (
-	// Video generates short videos through ByteDance Seedance (and Grok
-	// Imagine), running the async submit→poll loop and returning the gateway's
-	// verbatim completed-job JSON.
-	Video = blockrun.VideoClient
 	// RealFace enrolls a real, specific person (one-time on-phone liveness for
 	// consent, no KYC) and yields a ta_ asset for identity-consistent Seedance
 	// 2.0 generation.
@@ -40,22 +38,6 @@ type (
 	PortraitEnrollment   = blockrun.PortraitEnrollment
 	PortraitList         = blockrun.PortraitList
 )
-
-// NewVideo returns a Seedance video client paid per call via x402 on Base.
-//
-//	video, _ := vip.NewVideo()
-//	job, _ := video.Generate(ctx, "a neon-lit cyberpunk street, slow dolly", &vip.VideoGenerateOptions{
-//	    Model:           "bytedance/seedance-2.0-fast",
-//	    DurationSeconds: 5,
-//	})
-//	fmt.Println(job.Data[0].URL)
-func NewVideo(opts ...Option) (*Video, error) {
-	cfg, hexKey, err := resolveKey(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return blockrun.NewVideoClient(hexKey, blockrun.WithVideoAPIURL(cfg.apiURL))
-}
 
 // NewRealFace returns a RealFace client for enrolling a real, specific person
 // (init → on-phone liveness → enroll), paid per call via x402 on Base.
