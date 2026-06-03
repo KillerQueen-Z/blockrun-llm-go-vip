@@ -111,6 +111,9 @@ job, _ := video.Generate(ctx, "the mascot waves in soft studio light",
 `RealFaceAssetID` is mutually exclusive with `ImageURL` and only works on Seedance
 2.0 / 2.0-fast. Constructors: `vip.NewVideo`, `vip.NewRealFace`, `vip.NewPortrait`.
 
+Full real-person flow (RealFace state machine, on-phone liveness, error states):
+**[docs/real-person-flow.md](docs/real-person-flow.md)**.
+
 ## Options
 
 ```go
