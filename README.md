@@ -38,7 +38,7 @@ import (
 // Claude — exactly the official anthropic-sdk-go API.
 client, _ := vip.NewAnthropic()          // wallet auto-loaded from ~/.blockrun/.session
 msg, _ := client.Messages.New(ctx, anthropic.MessageNewParams{
-    Model:     anthropic.Model("claude-sonnet-4-6"),
+    Model:     anthropic.Model("claude-opus-4.8"), // current flagship (adaptive thinking)
     MaxTokens: 1024,
     Thinking:  anthropic.ThinkingConfigParamOfEnabled(1024),
     Messages:  []anthropic.MessageParam{
@@ -69,6 +69,21 @@ fmt.Println(resp.SystemFingerprint, resp.Model)   // genuine OpenAI direct
 
 Runnable examples: [`examples/anthropic`](examples/anthropic),
 [`examples/openai`](examples/openai), and [`examples/seedance`](examples/seedance).
+
+### Models
+
+You name the model; the gateway never substitutes it. Pass any current id verbatim:
+
+- **Claude**: `claude-opus-4.8` · `claude-opus-4.7` · `claude-opus-4.6` ·
+  `claude-opus-4.5` · `claude-sonnet-4.6` · `claude-sonnet-4.5` · `claude-haiku-4.5`.
+  Opus 4.7/4.8 use adaptive thinking — `anthropic.ThinkingConfigParamOfEnabled(N)` is honored.
+- **GPT**: `gpt-5.5` · `gpt-5.4` · `gpt-5.3` · `gpt-5.2` · `gpt-4.1` · `gpt-4o` ·
+  `gpt-4o-mini`, reasoning `o3` / `o4-mini`, and more. GPT‑5.x / o-series are reasoning
+  models — leave `MaxTokens`/`Temperature` unset (the gateway normalizes them);
+  `gpt-4o` / `gpt-4o-mini` are served OpenAI-direct.
+
+Full live catalog (66+ models incl. xAI Grok, DeepSeek, Llama, Mistral, Gemini):
+`https://blockrun.ai/api/v1/models`.
 
 ## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
 
@@ -114,6 +129,70 @@ job, _ := video.Generate(ctx, "the mascot waves in soft studio light",
 Full real-person flow (RealFace state machine, on-phone liveness, error states):
 **[docs/real-person-flow.md](docs/real-person-flow.md)**.
 
+## Image — generate & edit
+
+```go
+img, _ := vip.NewImage()
+out, _ := img.Generate(ctx, "a red fox in fresh snow, soft studio light",
+    &vip.ImageGenerateOptions{Model: "openai/gpt-image-1"})
+fmt.Println(out.Data[0].URL)
+
+// edit / multi-image fusion:
+edited, _ := img.Edit(ctx, "make it night", []string{dataURI}, nil)
+```
+
+Models: `openai/gpt-image-1` · `gpt-image-2` · `google/nano-banana` · `nano-banana-pro` ·
+`xai/grok-imagine-image` · `zai/cogview-4`. `img.ListImageModels(ctx)` lists them (free).
+
+## Audio — speech, music, sound effects
+
+```go
+sp, _ := vip.NewSpeech()
+speech, _ := sp.Generate(ctx, "Hello there.", &vip.SpeechGenerateOptions{Voice: "sarah"})
+sfx, _ := sp.SoundEffect(ctx, "distant thunder over rain", nil)
+
+mu, _ := vip.NewMusic()
+instrumental := true
+track, _ := mu.Generate(ctx, "dreamy lo-fi beat", &vip.MusicGenerateOptions{Instrumental: &instrumental})
+fmt.Println(speech.Data[0].URL, sfx.Data[0].URL, track.Data[0].URL)
+```
+
+`sp.ListVoices(ctx)` lists TTS voices (free). Music runs ~1-3 min and blocks until ready.
+
+## Search — Grok Live Search & Exa
+
+```go
+s, _ := vip.NewSearch()
+r, _ := s.Search(ctx, "latest on x402 micropayments",
+    &vip.SearchOptions{Sources: []string{"x", "news"}, MaxResults: 15})
+
+exa, _ := vip.NewExa()
+hits, _ := exa.Search(ctx, "x402 protocol", map[string]any{"numResults": 5})
+text, _ := exa.Contents(ctx, []string{"https://example.com"}, nil)
+ans, _ := exa.Answer(ctx, "what is the x402 payment header?", nil)
+```
+
+## Voice & Phone — AI phone calls
+
+Lease a wallet-bound number, then place an AI-driven outbound call. `Call` returns a
+call id; poll it with `GetCallStatus` for the transcript + recording.
+
+```go
+phone, _ := vip.NewPhone()
+num, _ := phone.BuyNumber(ctx, vip.BuyNumberOptions{Country: "US", AreaCode: "415"}) // $5, 30-day lease
+
+voice, _ := vip.NewVoice()
+call, _ := voice.Call(ctx, vip.CallOptions{
+    To:          "+14155551234",
+    Task:        "Ask if they're open Sunday, confirm hours, then thank them and end the call.",
+    MaxDuration: 3,
+})
+status, _ := voice.GetCallStatus(ctx, call.CallID)
+fmt.Println(status)
+```
+
+`Phone` also does `Lookup` / `LookupFraud`, `ListNumbers`, `RenewNumber`, `ReleaseNumber`.
+
 ## Options
 
 ```go
@@ -154,9 +233,17 @@ parsing — that is what makes the passthrough native.
 
 ## Scope
 
-Covers **Anthropic + OpenAI native passthrough** and **Seedance video (incl.
-RealFace real-person and Virtual Portrait)**, all on **Base**. Solana payment
-(`chain="solana"` in the Python VIP package) is not yet ported.
+Covers, all on **Base**:
+
+- **Anthropic + OpenAI** native passthrough (`NewAnthropic`, `NewOpenAI`).
+- **Seedance video** incl. RealFace real-person + Virtual Portrait (`NewVideo`,
+  `NewRealFace`, `NewPortrait`).
+- **Image** generate + edit (`NewImage`).
+- **Audio**: ElevenLabs speech + sound effects (`NewSpeech`), MiniMax music (`NewMusic`).
+- **Search**: Grok Live Search (`NewSearch`) + Exa web search (`NewExa`).
+- **Voice & Phone**: AI phone calls (`NewVoice`) + number provisioning (`NewPhone`).
+
+Solana payment (`chain="solana"` in the Python VIP package) is not yet ported.
 
 ## Access
 

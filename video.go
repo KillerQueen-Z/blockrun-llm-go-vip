@@ -91,32 +91,9 @@ func NewVideo(opts ...Option) (*Video, error) {
 // finish. The x402 payment is made here (the submit is the paid leg). Advance
 // the returned job with Poll or Wait.
 func (v *Video) Submit(ctx context.Context, prompt string, opts *VideoGenerateOptions) (*VideoJob, error) {
-	body := map[string]any{"prompt": prompt}
-	if opts != nil {
-		if opts.ImageURL != "" && opts.RealFaceAssetID != "" {
-			return nil, fmt.Errorf("vip: ImageURL and RealFaceAssetID are mutually exclusive; pass at most one")
-		}
-		if opts.RealFaceAssetID != "" && !strings.HasPrefix(opts.RealFaceAssetID, "ta_") {
-			return nil, fmt.Errorf("vip: RealFaceAssetID must start with 'ta_' (enroll via NewRealFace or NewPortrait)")
-		}
-		if opts.Model != "" {
-			body["model"] = opts.Model
-		}
-		if opts.ImageURL != "" {
-			body["image_url"] = opts.ImageURL
-		}
-		if opts.RealFaceAssetID != "" {
-			body["real_face_asset_id"] = opts.RealFaceAssetID
-		}
-		if opts.DurationSeconds > 0 {
-			body["duration_seconds"] = opts.DurationSeconds
-		}
-		if opts.Resolution != "" {
-			body["resolution"] = opts.Resolution
-		}
-		if opts.GenerateAudio != nil {
-			body["generate_audio"] = *opts.GenerateAudio
-		}
+	body, err := buildVideoBody(prompt, opts)
+	if err != nil {
+		return nil, err
 	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
@@ -159,6 +136,79 @@ func (v *Video) Submit(ctx context.Context, prompt string, opts *VideoGenerateOp
 	default:
 		return nil, &blockrun.APIError{StatusCode: status, Message: fmt.Sprintf("video submit failed: %s", string(respBytes))}
 	}
+}
+
+// buildVideoBody validates the option combination and builds the gateway request
+// body. Pure (no I/O) so it can be unit-tested without spending. Seedance accepts
+// three mutually-exclusive ways to seed a clip: a single ImageURL (optionally with
+// a LastFrameURL to interpolate to a final frame), a RealFaceAssetID (real-person /
+// virtual-portrait identity), or up to 9 ReferenceImageURLs (omni / multi-reference).
+func buildVideoBody(prompt string, opts *VideoGenerateOptions) (map[string]any, error) {
+	body := map[string]any{"prompt": prompt}
+	if opts == nil {
+		return body, nil
+	}
+
+	seeds := 0
+	if opts.ImageURL != "" {
+		seeds++
+	}
+	if opts.RealFaceAssetID != "" {
+		seeds++
+	}
+	if len(opts.ReferenceImageURLs) > 0 {
+		seeds++
+	}
+	if seeds > 1 {
+		return nil, fmt.Errorf("vip: ImageURL, RealFaceAssetID and ReferenceImageURLs are mutually exclusive; pass at most one")
+	}
+	if opts.RealFaceAssetID != "" && !strings.HasPrefix(opts.RealFaceAssetID, "ta_") {
+		return nil, fmt.Errorf("vip: RealFaceAssetID must start with 'ta_' (enroll via NewRealFace or NewPortrait)")
+	}
+	if opts.LastFrameURL != "" && opts.ImageURL == "" {
+		return nil, fmt.Errorf("vip: LastFrameURL (first-and-last-frame) requires ImageURL as the first frame")
+	}
+	if len(opts.ReferenceImageURLs) > 9 {
+		return nil, fmt.Errorf("vip: ReferenceImageURLs accepts at most 9 URLs, got %d", len(opts.ReferenceImageURLs))
+	}
+
+	if opts.Model != "" {
+		body["model"] = opts.Model
+	}
+	if opts.ImageURL != "" {
+		body["image_url"] = opts.ImageURL
+	}
+	if opts.LastFrameURL != "" {
+		body["last_frame_url"] = opts.LastFrameURL
+	}
+	if len(opts.ReferenceImageURLs) > 0 {
+		body["reference_image_urls"] = opts.ReferenceImageURLs
+	}
+	if opts.RealFaceAssetID != "" {
+		body["real_face_asset_id"] = opts.RealFaceAssetID
+	}
+	if opts.DurationSeconds > 0 {
+		body["duration_seconds"] = opts.DurationSeconds
+	}
+	if opts.AspectRatio != "" {
+		body["aspect_ratio"] = opts.AspectRatio
+	}
+	if opts.Resolution != "" {
+		body["resolution"] = opts.Resolution
+	}
+	if opts.GenerateAudio != nil {
+		body["generate_audio"] = *opts.GenerateAudio
+	}
+	if opts.Seed != nil {
+		body["seed"] = *opts.Seed
+	}
+	if opts.Watermark != nil {
+		body["watermark"] = *opts.Watermark
+	}
+	if opts.ReturnLastFrame {
+		body["return_last_frame"] = true
+	}
+	return body, nil
 }
 
 // Poll advances the job by one status check (re-signing x402). It updates

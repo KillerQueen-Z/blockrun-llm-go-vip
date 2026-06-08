@@ -1,5 +1,5 @@
-github.com/BlockRunAI/blockrun-llm-go v0.11.0 h1:6JT6KO8pp8hKehdNamTlLgpDhrZn4YOsnpr7w36bRUM=
-github.com/BlockRunAI/blockrun-llm-go v0.11.0/go.mod h1:di8carn7SxW3YaJ6jw2r3N91cMadiUWBNwq9V1pV6JE=
+github.com/BlockRunAI/blockrun-llm-go v0.15.0 h1:HwmglPpp7ylRUHMKqPcB5p8z0iaUhR5Xq7EOmh5Ur8o=
+github.com/BlockRunAI/blockrun-llm-go v0.15.0/go.mod h1:di8carn7SxW3YaJ6jw2r3N91cMadiUWBNwq9V1pV6JE=
 github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDOSA=
 github.com/StackExchange/wmi v1.2.1/go.mod h1:rcmrprowKIVzvc+NUiLncP2uuArMWLCbu9SBzvHz7e8=
 github.com/VictoriaMetrics/fastcache v1.12.2 h1:N0y9ASrJ0F6h0QaC3o6uJb3NIZ9VKLjCM7NQbSmF7WI=

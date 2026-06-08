@@ -16,7 +16,9 @@ import (
 //	client, err := vip.NewAnthropic()
 //	if err != nil { ... }
 //	msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-//	    Model:     anthropic.ModelClaudeSonnet4_5,
+//	    Model:     "claude-opus-4.8", // current flagship; any id is forwarded verbatim,
+//	                                  // never substituted (also: claude-sonnet-4.6,
+//	                                  // claude-haiku-4.5). Opus 4.7/4.8 use adaptive thinking.
 //	    MaxTokens: 1024,
 //	    Messages:  []anthropic.MessageParam{
 //	        anthropic.NewUserMessage(anthropic.NewTextBlock("What is 23*47?")),
