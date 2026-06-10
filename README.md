@@ -88,8 +88,10 @@ Full live catalog (66+ models incl. xAI Grok, DeepSeek, Llama, Mistral, Gemini):
 ## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
 
 Generate short videos through **ByteDance Seedance**. The gateway runs generation
-asynchronously, and the client mirrors that — `Submit` returns immediately (it is the
-x402-paid leg), then you `Poll` or `Wait`:
+asynchronously, and the client mirrors that — `Submit` signs the x402 payment
+authorization and returns immediately, then you `Poll` or `Wait`. USDC settles
+on-chain only on the first poll that observes `completed`; failed or abandoned
+jobs are never charged:
 
 ```go
 video, _ := vip.NewVideo()

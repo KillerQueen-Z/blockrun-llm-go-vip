@@ -28,7 +28,9 @@ const (
 // via the BlockRun gateway, paid per call in USDC (x402) on Base.
 //
 // The gateway runs generation asynchronously. The native API mirrors that:
-//   - Submit returns immediately with a VideoJob (the x402 payment happens here).
+//   - Submit returns immediately with a VideoJob. The x402 payment header is
+//     signed and verified here, but NO USDC moves yet — the gateway settles
+//     on-chain only on the first Poll that observes status=completed.
 //   - Poll advances the job by one status check.
 //   - Wait blocks until the job completes (convenience over Poll).
 //   - Generate is Submit+Wait, kept for callers that want a single blocking call.
@@ -88,8 +90,11 @@ func NewVideo(opts ...Option) (*Video, error) {
 }
 
 // Submit starts a video job and returns immediately without waiting for it to
-// finish. The x402 payment is made here (the submit is the paid leg). Advance
-// the returned job with Poll or Wait.
+// finish. The x402 payment authorization is signed and verified here, but the
+// gateway does NOT settle it: USDC is transferred only on the first Poll that
+// observes status=completed. A job that fails upstream, or that the caller
+// abandons without polling, is never charged. Advance the returned job with
+// Poll or Wait.
 func (v *Video) Submit(ctx context.Context, prompt string, opts *VideoGenerateOptions) (*VideoJob, error) {
 	body, err := buildVideoBody(prompt, opts)
 	if err != nil {
@@ -213,7 +218,10 @@ func buildVideoBody(prompt string, opts *VideoGenerateOptions) (map[string]any, 
 
 // Poll advances the job by one status check (re-signing x402). It updates
 // job.Status/Raw and, on completion, job.Response. It is a no-op once the job
-// is Done. No additional charge is settled until the job completes.
+// is Done. This is where payment actually settles: the gateway transfers the
+// USDC exactly once, on the first poll that observes status=completed. Polls
+// that see queued/in_progress charge nothing, and a job that ends failed is
+// never charged.
 func (v *Video) Poll(ctx context.Context, job *VideoJob) error {
 	if job.Done() {
 		return nil

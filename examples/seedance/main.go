@@ -30,8 +30,9 @@ func main() {
 	}
 	dur := 5
 
-	// Submit returns immediately (this is the x402-paid leg); generation runs
-	// asynchronously on the gateway.
+	// Submit signs the x402 payment authorization and returns immediately;
+	// generation runs asynchronously on the gateway. USDC settles only on the
+	// first poll that observes completed — failed/abandoned jobs are never charged.
 	job, err := video.Submit(ctx, "a neon-lit cyberpunk street, slow dolly forward", &vip.VideoGenerateOptions{
 		Model:           "bytedance/seedance-2.0-fast",
 		DurationSeconds: dur,
