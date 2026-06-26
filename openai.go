@@ -26,6 +26,10 @@ func NewOpenAI(opts ...Option) (openai.Client, error) {
 		return openai.Client{}, err
 	}
 	return openai.NewClient(
+		// Default per-request timeout for reasoning models (200-300s+); set
+		// first so a per-call option.WithRequestTimeout still wins. Override the
+		// default via the BLOCKRUN_CHAT_TIMEOUT env var (integer seconds).
+		option.WithRequestTimeout(defaultChatTimeout()),
 		// OpenAI SDK appends "chat/completions" to the base URL, so the
 		// gateway's /v1 prefix must be part of the base (Anthropic's SDK adds
 		// /v1/messages itself, so its base stays /api).
