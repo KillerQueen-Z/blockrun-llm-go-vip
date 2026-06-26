@@ -16,6 +16,10 @@ package vip
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	blockrun "github.com/BlockRunAI/blockrun-llm-go"
 )
@@ -24,6 +28,28 @@ import (
 // x402 payment, not by this value, but the official SDKs require a non-empty
 // key, so we supply a placeholder rather than leak any real provider key.
 const apiKeySentinel = "blockrun"
+
+// DefaultChatTimeout is the default per-request timeout applied to the
+// passthrough chat clients (NewOpenAI / NewAnthropic).
+//
+// Reasoning models (opus-4.8, deepseek-v4-pro) routinely think for 200-300s+,
+// so the official SDKs' lower default cut off non-streaming calls. Override via
+// the BLOCKRUN_CHAT_TIMEOUT env var (integer seconds). Mirrors blockrun-llm 1.4.7.
+const DefaultChatTimeout = 600 * time.Second
+
+// defaultChatTimeout returns the default chat request timeout. It reads the
+// BLOCKRUN_CHAT_TIMEOUT environment variable (integer seconds) and falls back
+// to DefaultChatTimeout (600s) when unset or invalid. A per-call or per-client
+// override (option.WithRequestTimeout on the official SDK) still wins, since
+// this is applied as the first option and later options take precedence.
+func defaultChatTimeout() time.Duration {
+	if v := os.Getenv("BLOCKRUN_CHAT_TIMEOUT"); v != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return DefaultChatTimeout
+}
 
 // config holds resolved client settings shared by the Anthropic and OpenAI
 // constructors.
