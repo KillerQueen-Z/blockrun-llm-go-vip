@@ -42,19 +42,25 @@ type (
 // NewRealFace returns a RealFace client for enrolling a real, specific person
 // (init → on-phone liveness → enroll), paid per call via x402 on Base.
 func NewRealFace(opts ...Option) (*RealFace, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewRealFaceClient(hexKey, blockrun.WithRealFaceAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewRealFaceClientSolana(key, cfg.solanaRPCURL, blockrun.WithRealFaceAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewRealFaceClient(key, blockrun.WithRealFaceAPIURL(cfg.apiURL))
 }
 
 // NewPortrait returns a Virtual Portrait client for enrolling an AI character /
 // mascot (single enroll call, no liveness), paid per call via x402 on Base.
 func NewPortrait(opts ...Option) (*Portrait, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewPortraitClient(hexKey, blockrun.WithPortraitAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewPortraitClientSolana(key, cfg.solanaRPCURL, blockrun.WithPortraitAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewPortraitClient(key, blockrun.WithPortraitAPIURL(cfg.apiURL))
 }

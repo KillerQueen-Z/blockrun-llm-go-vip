@@ -3,7 +3,6 @@ package vip
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,7 +36,7 @@ const (
 //
 // Data[0].URL on the completed job is a permanent BlockRun-hosted MP4.
 type Video struct {
-	priv         *ecdsa.PrivateKey
+	sign         paymentSigner
 	apiURL       string
 	httpClient   *http.Client
 	pollInterval time.Duration
@@ -76,12 +75,12 @@ func (j *VideoJob) Done() bool {
 //	})
 //	fmt.Println(job.Data[0].URL)
 func NewVideo(opts ...Option) (*Video, error) {
-	cfg, priv, err := resolve(opts...)
+	cfg, sign, err := resolveSigner(opts...)
 	if err != nil {
 		return nil, err
 	}
 	return &Video{
-		priv:         priv,
+		sign:         sign,
 		apiURL:       cfg.apiURL,
 		httpClient:   &http.Client{Timeout: 60 * time.Second},
 		pollInterval: defaultVideoPollInterval,
@@ -330,7 +329,7 @@ func (v *Video) doX402(ctx context.Context, method, fullURL string, body []byte)
 	if paymentHeader == "" {
 		return resp.StatusCode, nil, &blockrun.PaymentError{Message: "402 response but no payment requirements found"}
 	}
-	signature, err := signPayment(v.priv, paymentHeader, fullURL)
+	signature, err := v.sign(paymentHeader, fullURL)
 	if err != nil {
 		return 0, nil, err
 	}

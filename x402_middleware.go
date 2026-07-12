@@ -20,17 +20,22 @@ import (
 // to option.WithMiddleware on either SDK without conversion.
 type transportMiddleware = func(*http.Request, func(*http.Request) (*http.Response, error)) (*http.Response, error)
 
+// paymentSigner signs an x402 payment requirement for the resolved chain and
+// returns the base64 payment payload for the PAYMENT-SIGNATURE header.
+type paymentSigner func(paymentHeader, requestURL string) (string, error)
+
 // x402Middleware builds the native-passthrough payment middleware.
 //
 // It performs the x402 negotiation transparently: the first request goes out
-// unpaid, and on a 402 the requirement is parsed, an EIP-712 USDC authorization
-// is signed locally, and the original request is replayed verbatim with the
-// PAYMENT-SIGNATURE header. Everything else flows through untouched, so the
-// official SDK parses the upstream provider's response byte-for-byte.
+// unpaid, and on a 402 the requirement is parsed, a USDC authorization is signed
+// locally (EIP-712 on Base, SVM exact scheme on Solana), and the original request
+// is replayed verbatim with the PAYMENT-SIGNATURE header. Everything else flows
+// through untouched, so the official SDK parses the upstream provider's response
+// byte-for-byte.
 //
-// SECURITY: priv is used ONLY for local EIP-712 signing. The key never leaves
+// SECURITY: the wallet key is used ONLY for local signing. The key never leaves
 // the machine; only the signature is transmitted.
-func x402Middleware(priv *ecdsa.PrivateKey) transportMiddleware {
+func x402Middleware(sign paymentSigner) transportMiddleware {
 	return func(req *http.Request, next func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 		// Buffer the body so the 402 retry can replay it verbatim.
 		var body []byte
@@ -60,7 +65,7 @@ func x402Middleware(priv *ecdsa.PrivateKey) transportMiddleware {
 			return resp, &blockrun.PaymentError{Message: "402 response but no payment requirements found"}
 		}
 
-		signature, err := signPayment(priv, paymentHeader, req.URL.String())
+		signature, err := sign(paymentHeader, req.URL.String())
 		if err != nil {
 			return resp, err
 		}
@@ -94,6 +99,25 @@ func readPaymentRequirement(resp *http.Response) string {
 		}
 	}
 	return ""
+}
+
+// signSolanaPayment parses the requirement and returns a signed x402 SVM
+// exact-scheme payload (USDC on Solana). rpcURL is passed through to fetch the
+// blockhash and mint info (empty → SOLANA_RPC_URL / BlockRun's free proxy).
+func signSolanaPayment(bs58Key, rpcURL, paymentHeader, requestURL string) (string, error) {
+	paymentReq, err := blockrun.ParsePaymentRequired(paymentHeader)
+	if err != nil {
+		return "", &blockrun.PaymentError{Message: fmt.Sprintf("failed to parse payment requirements: %v", err)}
+	}
+	option, err := blockrun.ExtractPaymentDetails(paymentReq)
+	if err != nil {
+		return "", &blockrun.PaymentError{Message: fmt.Sprintf("failed to extract payment details: %v", err)}
+	}
+	resourceURL := paymentReq.Resource.URL
+	if resourceURL == "" {
+		resourceURL = requestURL
+	}
+	return blockrun.CreateSolanaPaymentPayload(bs58Key, option, resourceURL, paymentReq.Resource.Description, paymentReq.Extensions, rpcURL)
 }
 
 // signPayment parses the requirement and returns a signed x402 v2 payload.

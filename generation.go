@@ -74,11 +74,14 @@ type (
 //	})
 //	fmt.Println(out.Data[0].URL)
 func NewImage(opts ...Option) (*Image, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewImageClient(hexKey, blockrun.WithImageAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewImageClientSolana(key, cfg.solanaRPCURL, blockrun.WithImageAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewImageClient(key, blockrun.WithImageAPIURL(cfg.apiURL))
 }
 
 // NewSpeech returns a Speech client (ElevenLabs TTS + sound effects), paid per call
@@ -88,40 +91,52 @@ func NewImage(opts ...Option) (*Image, error) {
 //	out, _ := sp.Generate(ctx, "Hello there.", &vip.SpeechGenerateOptions{Voice: "sarah"})
 //	fmt.Println(out.Data[0].URL)
 func NewSpeech(opts ...Option) (*Speech, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewSpeechClient(hexKey, blockrun.WithSpeechAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewSpeechClientSolana(key, cfg.solanaRPCURL, blockrun.WithSpeechAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewSpeechClient(key, blockrun.WithSpeechAPIURL(cfg.apiURL))
 }
 
 // NewMusic returns a Music client (MiniMax track generation), paid per call via
 // x402 on Base. Generation runs ~1-3 minutes; the call blocks until the track is ready.
 func NewMusic(opts ...Option) (*Music, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewMusicClient(hexKey, blockrun.WithMusicAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewMusicClientSolana(key, cfg.solanaRPCURL, blockrun.WithMusicAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewMusicClient(key, blockrun.WithMusicAPIURL(cfg.apiURL))
 }
 
 // NewVoice returns a Voice client for outbound AI phone calls (Bland), paid per call
 // via x402 on Base. Buy a number with NewPhone first; Call returns a call id, and
 // GetCallStatus polls it for the transcript and recording.
 func NewVoice(opts ...Option) (*Voice, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewVoiceClient(hexKey, blockrun.WithVoiceAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewVoiceClientSolana(key, cfg.solanaRPCURL, blockrun.WithVoiceAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewVoiceClient(key, blockrun.WithVoiceAPIURL(cfg.apiURL))
 }
 
 // NewPhone returns a Phone client for number provisioning + carrier/fraud lookups
 // (Twilio), paid per call via x402 on Base.
 func NewPhone(opts ...Option) (*Phone, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewPhoneClient(hexKey, blockrun.WithPhoneAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewPhoneClientSolana(key, cfg.solanaRPCURL, blockrun.WithPhoneAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewPhoneClient(key, blockrun.WithPhoneAPIURL(cfg.apiURL))
 }

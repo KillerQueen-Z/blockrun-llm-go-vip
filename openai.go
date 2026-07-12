@@ -21,7 +21,7 @@ import (
 //	    },
 //	})
 func NewOpenAI(opts ...Option) (openai.Client, error) {
-	cfg, priv, err := resolve(opts...)
+	cfg, sign, err := resolveSigner(opts...)
 	if err != nil {
 		return openai.Client{}, err
 	}
@@ -35,6 +35,6 @@ func NewOpenAI(opts ...Option) (openai.Client, error) {
 		// /v1/messages itself, so its base stays /api).
 		option.WithBaseURL(cfg.apiURL+"/v1"),
 		option.WithAPIKey(cfg.apiKey),
-		option.WithMiddleware(x402Middleware(priv)),
+		option.WithMiddleware(x402Middleware(sign)),
 	), nil
 }

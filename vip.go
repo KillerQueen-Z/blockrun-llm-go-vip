@@ -14,7 +14,6 @@
 package vip
 
 import (
-	"crypto/ecdsa"
 	"fmt"
 	"os"
 	"strconv"
@@ -51,12 +50,20 @@ func defaultChatTimeout() time.Duration {
 	return DefaultChatTimeout
 }
 
+// chainBase and chainSolana are the supported payment chains.
+const (
+	chainBase   = "base"
+	chainSolana = "solana"
+)
+
 // config holds resolved client settings shared by the Anthropic and OpenAI
 // constructors.
 type config struct {
-	apiURL  string
-	apiKey  string
-	privHex string // optional explicit wallet key (hex); empty means auto-load
+	apiURL       string
+	apiKey       string
+	privHex      string // optional explicit wallet key (Base hex or Solana bs58); empty means auto-load
+	chain        string // "base" (default) or "solana"
+	solanaRPCURL string // optional Solana RPC override (blockhash + mint info)
 }
 
 // Option customises a VIP client.
@@ -69,11 +76,26 @@ func WithBaseURL(url string) Option {
 	return func(c *config) { c.apiURL = url }
 }
 
-// WithWalletKey sets the Base wallet private key (hex) explicitly. When unset,
-// the key is loaded from BLOCKRUN_WALLET_KEY / BASE_CHAIN_WALLET_KEY or
-// ~/.blockrun/.session.
-func WithWalletKey(hexKey string) Option {
-	return func(c *config) { c.privHex = hexKey }
+// WithWalletKey sets the wallet private key explicitly (Base hex, or bs58 when
+// WithChain("solana") is set). When unset, the key is loaded per chain: Base from
+// BLOCKRUN_WALLET_KEY / BASE_CHAIN_WALLET_KEY / ~/.blockrun/.session; Solana from
+// SOLANA_WALLET_KEY / ~/.*/solana-wallet.json / ~/.blockrun/.solana-session.
+func WithWalletKey(key string) Option {
+	return func(c *config) { c.privHex = key }
+}
+
+// WithChain selects the payment chain: "base" (default, USDC on Base via EIP-712)
+// or "solana" (USDC on Solana via sol.blockrun.ai and the x402 SVM exact scheme).
+// It also switches the default gateway base URL to match the chain.
+func WithChain(chain string) Option {
+	return func(c *config) { c.chain = chain }
+}
+
+// WithSolanaRPCURL overrides the Solana JSON-RPC endpoint used while signing (to
+// fetch the recent blockhash and mint info). Defaults to BlockRun's free proxy
+// (SOLANA_RPC_URL env, then https://sol.blockrun.ai/api/v1/solana/rpc).
+func WithSolanaRPCURL(url string) Option {
+	return func(c *config) { c.solanaRPCURL = url }
 }
 
 // WithAPIKey overrides the placeholder upstream API key. Rarely needed —
@@ -82,39 +104,79 @@ func WithAPIKey(key string) Option {
 	return func(c *config) { c.apiKey = key }
 }
 
-// resolveKey applies options and resolves the wallet key as a hex string. The
-// media clients (Video / RealFace / Portrait) reuse blockrun-llm-go's clients,
-// which take the hex key directly.
-func resolveKey(opts ...Option) (cfg config, hexKey string, err error) {
+// isSolana reports whether the resolved config pays on Solana.
+func (c config) isSolana() bool { return c.chain == chainSolana }
+
+// resolveKey applies options and resolves the wallet key for the selected chain
+// (Base hex or Solana bs58). The media clients reuse blockrun-llm-go's clients,
+// which take the key directly.
+func resolveKey(opts ...Option) (cfg config, key string, err error) {
 	cfg = config{
-		apiURL: blockrun.DefaultAPIURL,
 		apiKey: apiKeySentinel,
+		chain:  chainBase,
 	}
 	for _, o := range opts {
 		o(&cfg)
 	}
+	if cfg.chain == "" {
+		cfg.chain = chainBase
+	}
+	if cfg.chain != chainBase && cfg.chain != chainSolana {
+		return cfg, "", fmt.Errorf("vip: unknown chain %q (want %q or %q)", cfg.chain, chainBase, chainSolana)
+	}
 
-	hexKey = cfg.privHex
-	if hexKey == "" {
-		hexKey, err = blockrun.LoadWallet()
+	if cfg.isSolana() {
+		if cfg.apiURL == "" {
+			cfg.apiURL = blockrun.DefaultSolanaAPIURL
+		}
+		key = cfg.privHex
+		if key == "" {
+			key, err = blockrun.LoadSolanaWallet()
+			if err != nil {
+				return cfg, "", fmt.Errorf("vip: failed to load Solana wallet: %w", err)
+			}
+		}
+		if key == "" {
+			return cfg, "", fmt.Errorf("vip: no Solana wallet key (set SOLANA_WALLET_KEY or ~/.blockrun/.solana-session, or pass WithWalletKey)")
+		}
+		return cfg, key, nil
+	}
+
+	if cfg.apiURL == "" {
+		cfg.apiURL = blockrun.DefaultAPIURL
+	}
+	key = cfg.privHex
+	if key == "" {
+		key, err = blockrun.LoadWallet()
 		if err != nil {
 			return cfg, "", fmt.Errorf("vip: no wallet key (set BLOCKRUN_WALLET_KEY or ~/.blockrun/.session, or pass WithWalletKey): %w", err)
 		}
 	}
-	return cfg, hexKey, nil
+	return cfg, key, nil
 }
 
-// resolve applies options and loads the signing key as an *ecdsa.PrivateKey for
-// the x402 middleware used by the Anthropic / OpenAI passthrough clients.
-func resolve(opts ...Option) (cfg config, priv *ecdsa.PrivateKey, err error) {
-	cfg, hexKey, err := resolveKey(opts...)
+// resolveSigner applies options, resolves the wallet key, and returns a
+// chain-aware x402 payment signer for the passthrough middleware and native
+// Video client. Base signs EIP-712 (secp256k1); Solana signs the SVM exact scheme
+// (ed25519).
+func resolveSigner(opts ...Option) (cfg config, sign paymentSigner, err error) {
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return cfg, nil, err
 	}
 
-	priv, err = blockrun.GetPrivateKeyFromHex(hexKey)
+	if cfg.isSolana() {
+		rpc := cfg.solanaRPCURL
+		return cfg, func(paymentHeader, requestURL string) (string, error) {
+			return signSolanaPayment(key, rpc, paymentHeader, requestURL)
+		}, nil
+	}
+
+	priv, err := blockrun.GetPrivateKeyFromHex(key)
 	if err != nil {
 		return cfg, nil, fmt.Errorf("vip: invalid wallet key: %w", err)
 	}
-	return cfg, priv, nil
+	return cfg, func(paymentHeader, requestURL string) (string, error) {
+		return signPayment(priv, paymentHeader, requestURL)
+	}, nil
 }

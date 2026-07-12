@@ -69,7 +69,9 @@ func TestX402Middleware_SignsAndRetries(t *testing.T) {
 		t.Fatalf("load key: %v", err)
 	}
 
-	mw := x402Middleware(priv)
+	mw := x402Middleware(func(paymentHeader, requestURL string) (string, error) {
+		return signPayment(priv, paymentHeader, requestURL)
+	})
 	next := func(req *http.Request) (*http.Response, error) {
 		return http.DefaultClient.Do(req)
 	}
@@ -109,7 +111,9 @@ func TestX402Middleware_PassthroughOn200(t *testing.T) {
 	defer srv.Close()
 
 	priv, _ := blockrun.GetPrivateKeyFromHex(testWalletKey)
-	mw := x402Middleware(priv)
+	mw := x402Middleware(func(paymentHeader, requestURL string) (string, error) {
+		return signPayment(priv, paymentHeader, requestURL)
+	})
 	next := func(req *http.Request) (*http.Response, error) { return http.DefaultClient.Do(req) }
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL, bytes.NewReader([]byte(`{}`)))
