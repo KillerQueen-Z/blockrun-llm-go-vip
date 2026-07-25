@@ -23,7 +23,7 @@ func main() {
 	}
 
 	msg, err := client.Messages.New(context.Background(), anthropic.MessageNewParams{
-		Model:     anthropic.Model("claude-sonnet-4-6"),
+		Model:     anthropic.Model("claude-opus-5"),
 		MaxTokens: 1024,
 		Thinking:  anthropic.ThinkingConfigParamOfEnabled(1024),
 		Messages: []anthropic.MessageParam{

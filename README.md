@@ -72,20 +72,40 @@ Runnable examples: [`examples/anthropic`](examples/anthropic),
 
 ### Models
 
-You name the model; the gateway never substitutes it. Pass any current id verbatim.
-The SDK ships a 82-model catalog snapshot (chat, image, video, music, speech, and
+You name the model; the gateway never substitutes it. Pass any current id verbatim:
+
+- **Claude**: `claude-opus-5` · `claude-sonnet-5` · `claude-opus-4.8` · `claude-opus-4.7` ·
+  `claude-opus-4.5` · `claude-sonnet-4.6` · `claude-sonnet-4.5` · `claude-haiku-4.5`.
+  Opus 4.7 and up use adaptive thinking — `anthropic.ThinkingConfigParamOfEnabled(N)` is honored.
+- **GPT**: `gpt-5.6-sol` · `gpt-5.6-terra` · `gpt-5.6-luna` · `gpt-5.5` · `gpt-5.4` ·
+  `gpt-5.3` · `gpt-5.2` · `gpt-4.1` · `gpt-4o` · `gpt-4o-mini`, reasoning `o3` / `o4-mini`,
+  and more. GPT‑5.x / o-series are reasoning models — leave `MaxTokens`/`Temperature`
+  unset (the gateway normalizes them); `gpt-4o` / `gpt-4o-mini` are served OpenAI-direct.
+
+The SDK also ships an 82-model catalog snapshot (chat, image, video, music, speech, and
 sound effects) so callers can build a picker without a network round trip:
 
 ```go
 for _, model := range vip.Models() {
-    fmt.Println(model.ID, model.Categories, model.Pricing)
+    fmt.Println(model.ID, model.Categories, model.ContextWindow, model.Pricing)
 }
 opus, ok := vip.FindModel("anthropic/claude-opus-5")
 ```
 
-The snapshot includes `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`, all
-GPT-5.6 tiers, Gemini, DeepSeek, Grok, Qwen, free NVIDIA, and media models.
-Use `https://blockrun.ai/api/v1/models` when your application needs the live catalog.
+Catalog ids are namespaced (`anthropic/claude-opus-5`), which is the form the media helpers
+take. The gateway resolves either form on the chat routes, so `model.ID` works with
+`Messages.New` / `Chat.Completions.New` too — but `model.NativeID()` gives the bare
+provider id (`"claude-opus-5"`) that matches the upstream SDK docs. `FindModel` accepts
+either form. `BillingMode` (`"paid"`, `"free"`, or the media unit) identifies the free
+NVIDIA tier; an unpriced media model is not free.
+
+One gotcha: use the dotted ids above. Dashed variants are accepted only as a fixed alias
+list, and a namespaced dashed id (`anthropic/claude-sonnet-4-6`) is rejected by
+`/v1/messages` outright.
+
+The snapshot covers Claude, all GPT-5.6 tiers, Gemini, DeepSeek, Grok, Qwen, free NVIDIA,
+and media models. Use `https://blockrun.ai/api/v1/models` when your application needs the
+live catalog.
 
 ## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
 
