@@ -25,7 +25,7 @@ import (
 //	    },
 //	})
 func NewAnthropic(opts ...Option) (anthropic.Client, error) {
-	cfg, priv, err := resolve(opts...)
+	cfg, sign, err := resolveSigner(opts...)
 	if err != nil {
 		return anthropic.Client{}, err
 	}
@@ -36,6 +36,6 @@ func NewAnthropic(opts ...Option) (anthropic.Client, error) {
 		option.WithRequestTimeout(defaultChatTimeout()),
 		option.WithBaseURL(cfg.apiURL),
 		option.WithAPIKey(cfg.apiKey),
-		option.WithMiddleware(x402Middleware(priv)),
+		option.WithMiddleware(x402Middleware(sign)),
 	), nil
 }

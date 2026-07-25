@@ -1,8 +1,9 @@
 # blockrun-llm-go-vip
 
 Genuine **native passthrough** for **Anthropic** and **OpenAI** through the BlockRun
-gateway — pay per call in USDC (x402) on **Base**, with **zero model substitution and
-zero response reshaping**.
+gateway — pay per call in USDC (x402) on **Base** or **Solana**
+(`vip.WithChain("solana")`), with **zero model substitution and zero response
+reshaping**.
 
 Unlike a re-implemented client, the constructors here return the **official
 `anthropic-sdk-go` and `openai-go` client types**. They only swap the transport (to add
@@ -221,25 +222,53 @@ fmt.Println(status)
 
 ```go
 vip.NewAnthropic(
-    vip.WithWalletKey("0x..."),                  // explicit Base key (hex)
+    vip.WithChain("solana"),                     // "base" (default) or "solana"
+    vip.WithWalletKey("..."),                    // explicit key (Base hex, or bs58 on Solana)
     vip.WithBaseURL("https://blockrun.ai/api"),  // override the gateway
+    vip.WithSolanaRPCURL("https://..."),         // override the Solana RPC (Solana only)
     vip.WithAPIKey("blockrun"),                  // placeholder upstream key
 )
 ```
 
-All options apply to `NewOpenAI` too.
+All options apply to every constructor (`NewOpenAI`, `NewImage`, `NewVideo`, …).
+
+## Solana
+
+Pass `vip.WithChain("solana")` to any constructor to pay **USDC on Solana** via
+`sol.blockrun.ai` instead of Base — the drop-in stays identical:
+
+```go
+claude, _ := vip.NewAnthropic(vip.WithChain("solana"))  // bs58 key from ~/.blockrun/.solana-session
+gpt, _    := vip.NewOpenAI(vip.WithChain("solana"))
+img, _    := vip.NewImage(vip.WithChain("solana"))
+```
+
+Payment is the x402 **SVM "exact" scheme**: the bs58 key signs a Solana
+`TransferChecked` USDC transaction locally (ed25519), and BlockRun's facilitator
+co-signs the fee and settles it gaslessly. Responses are still the upstream
+provider's verbatim JSON. Runnable example: [`examples/solana`](examples/solana).
 
 ## Wallet
 
-The private key is used **only for local EIP-712 signing** and never leaves your machine.
-Resolution order:
+The private key is used **only for local signing** (EIP-712 on Base, SVM/ed25519 on
+Solana) and never leaves your machine.
+
+**Base** resolution order:
 
 1. `WithWalletKey(...)` option
 2. `BLOCKRUN_WALLET_KEY` env
 3. `BASE_CHAIN_WALLET_KEY` env
 4. `~/.blockrun/.session`
 
-The gateway base URL can also be overridden via the `BLOCKRUN_API_URL` env var.
+**Solana** (`WithChain("solana")`) resolution order:
+
+1. `WithWalletKey(...)` option (bs58)
+2. `SOLANA_WALLET_KEY` env
+3. `~/.*/solana-wallet.json` (most recent)
+4. `~/.blockrun/.solana-session`
+
+The gateway base URL can be overridden via `BLOCKRUN_API_URL` (Base) /
+`BLOCKRUN_SOLANA_API_URL` (Solana); the Solana signing RPC via `SOLANA_RPC_URL`.
 
 ## How it works
 
@@ -248,16 +277,16 @@ The gateway base URL can also be overridden via the `BLOCKRUN_API_URL` env var.
 - `option.WithBaseURL(...)` — point at the BlockRun gateway.
 - `option.WithMiddleware(...)` — a transport middleware that performs the x402
   handshake: the first request goes out unpaid; on a `402` the `payment-required`
-  requirement is parsed, an EIP-712 USDC authorization is signed locally, and the
-  original request is replayed **verbatim** with a `PAYMENT-SIGNATURE` header. On `200`
-  the upstream body is handed back untouched.
+  requirement is parsed, a USDC authorization is signed locally (EIP-712 on Base, the
+  SVM "exact" scheme on Solana), and the original request is replayed **verbatim** with
+  a `PAYMENT-SIGNATURE` header. On `200` the upstream body is handed back untouched.
 
 Because the middleware never reshapes the success response, the official SDK does all
 parsing — that is what makes the passthrough native.
 
 ## Scope
 
-Covers, all on **Base**:
+Covers, on **Base** or **Solana** (`vip.WithChain("solana")`):
 
 - **Anthropic + OpenAI** native passthrough (`NewAnthropic`, `NewOpenAI`).
 - **Seedance video** incl. RealFace real-person + Virtual Portrait (`NewVideo`,
@@ -266,8 +295,6 @@ Covers, all on **Base**:
 - **Audio**: ElevenLabs speech + sound effects (`NewSpeech`), MiniMax music (`NewMusic`).
 - **Search**: Grok Live Search (`NewSearch`) + Exa web search (`NewExa`).
 - **Voice & Phone**: AI phone calls (`NewVoice`) + number provisioning (`NewPhone`).
-
-Solana payment (`chain="solana"` in the Python VIP package) is not yet ported.
 
 ## Access
 
