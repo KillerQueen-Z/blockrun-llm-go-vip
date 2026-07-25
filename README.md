@@ -38,7 +38,7 @@ import (
 // Claude — exactly the official anthropic-sdk-go API.
 client, _ := vip.NewAnthropic()          // wallet auto-loaded from ~/.blockrun/.session
 msg, _ := client.Messages.New(ctx, anthropic.MessageNewParams{
-    Model:     anthropic.Model("claude-opus-4.8"), // current flagship (adaptive thinking)
+    Model:     anthropic.Model("claude-opus-5"), // current flagship (adaptive thinking)
     MaxTokens: 1024,
     Thinking:  anthropic.ThinkingConfigParamOfEnabled(1024),
     Messages:  []anthropic.MessageParam{
@@ -72,18 +72,20 @@ Runnable examples: [`examples/anthropic`](examples/anthropic),
 
 ### Models
 
-You name the model; the gateway never substitutes it. Pass any current id verbatim:
+You name the model; the gateway never substitutes it. Pass any current id verbatim.
+The SDK ships a 82-model catalog snapshot (chat, image, video, music, speech, and
+sound effects) so callers can build a picker without a network round trip:
 
-- **Claude**: `claude-opus-4.8` · `claude-opus-4.7` · `claude-opus-4.6` ·
-  `claude-opus-4.5` · `claude-sonnet-4.6` · `claude-sonnet-4.5` · `claude-haiku-4.5`.
-  Opus 4.7/4.8 use adaptive thinking — `anthropic.ThinkingConfigParamOfEnabled(N)` is honored.
-- **GPT**: `gpt-5.5` · `gpt-5.4` · `gpt-5.3` · `gpt-5.2` · `gpt-4.1` · `gpt-4o` ·
-  `gpt-4o-mini`, reasoning `o3` / `o4-mini`, and more. GPT‑5.x / o-series are reasoning
-  models — leave `MaxTokens`/`Temperature` unset (the gateway normalizes them);
-  `gpt-4o` / `gpt-4o-mini` are served OpenAI-direct.
+```go
+for _, model := range vip.Models() {
+    fmt.Println(model.ID, model.Categories, model.Pricing)
+}
+opus, ok := vip.FindModel("anthropic/claude-opus-5")
+```
 
-Full live catalog (66+ models incl. xAI Grok, DeepSeek, Llama, Mistral, Gemini):
-`https://blockrun.ai/api/v1/models`.
+The snapshot includes `anthropic/claude-opus-5`, `anthropic/claude-sonnet-5`, all
+GPT-5.6 tiers, Gemini, DeepSeek, Grok, Qwen, free NVIDIA, and media models.
+Use `https://blockrun.ai/api/v1/models` when your application needs the live catalog.
 
 ## Seedance video — incl. real-person (RealFace) & AI character (Portrait)
 
