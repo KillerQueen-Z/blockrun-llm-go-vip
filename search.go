@@ -26,7 +26,8 @@ type Search struct {
 	llm *blockrun.LLMClient
 }
 
-// NewSearch returns a Grok Live Search client, paid per call via x402 on Base.
+// NewSearch returns a Grok Live Search client, paid per call via x402 on Base
+// (default) or Solana (WithChain("solana")).
 //
 //	s, _ := vip.NewSearch()
 //	r, _ := s.Search(ctx, "latest on x402 micropayments", &vip.SearchOptions{
@@ -52,7 +53,8 @@ type Exa struct {
 	llm *blockrun.LLMClient
 }
 
-// NewExa returns an Exa web-search client, paid per call via x402 on Base.
+// NewExa returns an Exa web-search client, paid per call via x402 on Base
+// (default) or Solana (WithChain("solana")).
 //
 //	exa, _ := vip.NewExa()
 //	hits, _ := exa.Search(ctx, "x402 protocol", map[string]any{"numResults": 5})
@@ -87,9 +89,12 @@ func (e *Exa) Answer(ctx context.Context, query string, extra map[string]any) (m
 // newLLM builds an internal blockrun-llm-go LLMClient with VIP wallet resolution. It
 // backs the Search and Exa wrappers, which surface only the search methods.
 func newLLM(opts ...Option) (*blockrun.LLMClient, error) {
-	cfg, hexKey, err := resolveKey(opts...)
+	cfg, key, err := resolveKey(opts...)
 	if err != nil {
 		return nil, err
 	}
-	return blockrun.NewLLMClient(hexKey, blockrun.WithAPIURL(cfg.apiURL))
+	if cfg.isSolana() {
+		return blockrun.NewLLMClientSolana(key, cfg.solanaRPCURL, blockrun.WithAPIURL(cfg.apiURL))
+	}
+	return blockrun.NewLLMClient(key, blockrun.WithAPIURL(cfg.apiURL))
 }

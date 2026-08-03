@@ -116,3 +116,34 @@ func TestSolanaMediaClientWiring(t *testing.T) {
 		t.Errorf("base wallet address = %q, want a 0x address", addr)
 	}
 }
+
+// TestSolanaSearchExaWiring proves NewSearch/NewExa honor WithChain("solana"):
+// the wrapped LLMClient must be Solana-backed (bs58 pubkey wallet), not a Base
+// client fed a bs58 key it cannot parse. This was the one place in the VIP
+// surface that ignored the chain option.
+func TestSolanaSearchExaWiring(t *testing.T) {
+	s, err := NewSearch(WithChain("solana"), WithWalletKey(testSolanaKey))
+	if err != nil {
+		t.Fatalf("NewSearch solana: %v", err)
+	}
+	if got := s.llm.GetWalletAddress(); got != testSolanaPubkey {
+		t.Errorf("Search wallet = %q, want solana pubkey %q", got, testSolanaPubkey)
+	}
+
+	e, err := NewExa(WithChain("solana"), WithWalletKey(testSolanaKey))
+	if err != nil {
+		t.Fatalf("NewExa solana: %v", err)
+	}
+	if got := e.llm.GetWalletAddress(); got != testSolanaPubkey {
+		t.Errorf("Exa wallet = %q, want solana pubkey %q", got, testSolanaPubkey)
+	}
+
+	// Base default still yields a 0x wallet from the same wrappers.
+	sb, err := NewSearch(WithWalletKey(testWalletKey))
+	if err != nil {
+		t.Fatalf("NewSearch base: %v", err)
+	}
+	if addr := sb.llm.GetWalletAddress(); len(addr) < 2 || addr[:2] != "0x" {
+		t.Errorf("base Search wallet = %q, want a 0x address", addr)
+	}
+}
