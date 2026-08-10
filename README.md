@@ -2,8 +2,9 @@
 
 Genuine **native passthrough** for **Anthropic** and **OpenAI** through the BlockRun
 gateway — pay per call in USDC (x402) on **Base** or **Solana**
-(`vip.WithChain("solana")`), with **zero model substitution and zero response
-reshaping**.
+(`vip.WithChain("solana")`), with **zero response reshaping**. Explicit model
+ids are never substituted; the opt-in `blockrun/auto|eco|premium` aliases are
+resolved locally before payment.
 
 Unlike a re-implemented client, the constructors here return the **official
 `anthropic-sdk-go` and `openai-go` client types**. They only swap the transport (to add
@@ -67,6 +68,32 @@ resp, _ := gpt.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 })
 fmt.Println(resp.SystemFingerprint, resp.Model)   // genuine OpenAI direct
 ```
+
+## Router Core V3
+
+The SDK contains a native Go adapter pinned to BlockRun Router Core commit
+`d430804`. It applies hard tool/vision/context constraints, classifies the task,
+then ranks a model portfolio using quality, task affinity, token cost, speed,
+and reliability. It makes no classifier-model request.
+
+Use Auto exactly like a normal OpenAI model id. The middleware resolves it
+before the first unpaid x402 probe, then replays the same routed body on the
+paid request. Tools and the official OpenAI response remain untouched:
+
+```go
+resp, err := gpt.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+    Model: openai.ChatModel("blockrun/auto"),
+    Messages: []openai.ChatCompletionMessageParamUnion{
+        openai.UserMessage("Inspect the repository, fix the failing endpoint, and run tests."),
+    },
+    Tools: tools,
+})
+```
+
+For audit or UI use, call `vip.Route(vip.RouterRequest{...})` directly. It is
+purely local and returns the selected model, task type, tier, candidate score
+breakdown, estimated token-normalized cost, and ordered fallbacks. The same
+router code applies whether `NewOpenAI` pays on Base or Solana.
 
 Runnable examples: [`examples/anthropic`](examples/anthropic),
 [`examples/openai`](examples/openai), and [`examples/seedance`](examples/seedance).

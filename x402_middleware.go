@@ -46,6 +46,12 @@ func x402Middleware(sign paymentSigner) transportMiddleware {
 			}
 			_ = req.Body.Close()
 			body = b
+			// Router aliases are resolved once, locally, before the unpaid x402
+			// probe. The paid retry replays this exact routed body.
+			body, _, err = routeOpenAIRequest(body, req.URL.Path)
+			if err != nil {
+				return nil, fmt.Errorf("router: resolve model alias: %w", err)
+			}
 			req.Body = io.NopCloser(bytes.NewReader(body))
 			req.ContentLength = int64(len(body))
 		}

@@ -131,3 +131,29 @@ func TestX402Middleware_PassthroughOn200(t *testing.T) {
 		t.Fatalf("want 1 call (no payment needed), got %d", got)
 	}
 }
+
+func TestX402Middleware_RoutesAutoBeforeFirstProbe(t *testing.T) {
+	mw := x402Middleware(func(_, _ string) (string, error) { return "", nil })
+	next := func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["model"] == "blockrun/auto" || payload["model"] == "" {
+			t.Fatalf("router alias reached the gateway: %#v", payload["model"])
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader([]byte(`{"ok":true}`))),
+		}, nil
+	}
+	req, _ := http.NewRequest(http.MethodPost, "https://blockrun.ai/api/v1/chat/completions",
+		bytes.NewReader([]byte(`{"model":"blockrun/auto","messages":[{"role":"user","content":"hello"}]}`)))
+	resp, err := mw(req, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+}
