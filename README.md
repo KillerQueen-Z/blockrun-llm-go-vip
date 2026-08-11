@@ -227,6 +227,7 @@ vip.NewAnthropic(
     vip.WithBaseURL("https://blockrun.ai/api"),  // override the gateway
     vip.WithSolanaRPCURL("https://..."),         // override the Solana RPC (Solana only)
     vip.WithAPIKey("blockrun"),                  // placeholder upstream key
+    vip.WithFacilitator("payai"),                // facilitator preference (Solana only; default "figment")
 )
 ```
 
@@ -247,6 +248,16 @@ Payment is the x402 **SVM "exact" scheme**: the bs58 key signs a Solana
 `TransferChecked` USDC transaction locally (ed25519), and BlockRun's facilitator
 co-signs the fee and settles it gaslessly. Responses are still the upstream
 provider's verbatim JSON. Runnable example: [`examples/solana`](examples/solana).
+
+### Facilitator routing (v0.7.0+)
+
+Solana clients send a facilitator preference (`x-blockrun-facilitator: figment`)
+plus the wallet's **public** address (`x-payer-wallet`) with each request. The
+gateway treats them as a routing hint: wallets on BlockRun's enterprise
+allowlist settle through the Figment facilitator; all other wallets are served
+by PayAI exactly as before, so the default is safe for every wallet. Opt out
+with `vip.WithFacilitator("payai")` or `BLOCKRUN_FACILITATOR=payai` — the wire
+is then byte-identical to v0.6.x. Base chain is unaffected.
 
 ## Wallet
 
