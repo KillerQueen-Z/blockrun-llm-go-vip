@@ -251,13 +251,13 @@ provider's verbatim JSON. Runnable example: [`examples/solana`](examples/solana)
 
 ### Facilitator routing (v0.7.0+)
 
-Solana clients send a facilitator preference (`x-blockrun-facilitator: figment`)
-plus the wallet's **public** address (`x-payer-wallet`) with each request. The
-gateway treats them as a routing hint: wallets on BlockRun's enterprise
-allowlist settle through the Figment facilitator; all other wallets are served
-by PayAI exactly as before, so the default is safe for every wallet. Opt out
-with `vip.WithFacilitator("payai")` or `BLOCKRUN_FACILITATOR=payai` — the wire
-is then byte-identical to v0.6.x. Base chain is unaffected.
+Solana VIP clients send a facilitator preference (`x-blockrun-facilitator:
+figment`) plus the wallet's **public** address (`x-payer-wallet`) with each
+request, so VIP traffic settles through the **Figment** facilitator while
+other BlockRun clients keep using PayAI. Payment semantics are identical on
+both rails (same x402 exact-scheme USDC transfer, gasless for the payer). Opt
+out with `vip.WithFacilitator("payai")` or `BLOCKRUN_FACILITATOR=payai` — the
+wire is then byte-identical to v0.6.x. Base chain is unaffected.
 
 ## Wallet
 
