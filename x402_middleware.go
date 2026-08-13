@@ -40,6 +40,14 @@ var staleBlockhashRetryBackoffs = []time.Duration{500 * time.Millisecond, 2 * ti
 // through untouched, so the official SDK parses the upstream provider's response
 // byte-for-byte.
 //
+// One exception to single-shot payment: if the paid leg comes back 402 with an
+// explicit stale-blockhash rejection (see isStaleBlockhashResponse), the signed
+// transaction is dead as signed and is discarded — never replayed. The loop then
+// re-runs the whole negotiation from a fresh unpaid challenge, bounded by
+// staleBlockhashRetryBackoffs. Every other 402 is terminal and passes through.
+// A caller can therefore sign up to len(staleBlockhashRetryBackoffs)+1 distinct
+// payments for one request, each against a server-supplied quote.
+//
 // SECURITY: the wallet key is used ONLY for local signing. The key never leaves
 // the machine; only the signature is transmitted.
 //
@@ -135,35 +143,108 @@ func x402MiddlewareWithBackoffs(sign paymentSigner, extraHeaders map[string]stri
 	}
 }
 
+// maxStaleClassifyBytes caps how much of a rejected 402 is buffered to classify
+// it. A payment rejection is a few hundred bytes; a larger body is not one, and
+// reading it unbounded would let a gateway that already holds a signed payment
+// exhaust client memory. Past the cap the response is treated as terminal.
+const maxStaleClassifyBytes = 64 << 10
+
 // isStaleBlockhashResponse recognizes only explicit, machine-readable stale
 // blockhash failures. transaction_simulation_failed alone is intentionally not
 // enough: it also covers terminal account, balance, and signature failures.
 // The response body is restored so an unhandled 402 remains byte-for-byte
 // available to the official SDK and caller.
+//
+// Three body shapes carry the signal, because the gateway speaks two dialects
+// and changed one of them:
+//
+//	OpenAI-shaped routes   {"code":"PAYMENT_INVALID","reason":"expired_signature"}
+//	Anthropic /v1/messages {"error":{"message":"Payment verification failed: expired_signature"}}
+//	pre-2026-08 gateways   {"invalidMessage":"BlockhashNotFound"}
+//
+// `reason` is the current, documented client-facing vocabulary; the gateway
+// stopped echoing the facilitator's verbatim invalidMessage (blockrun-sol
+// c2a17bf) because it named internal simulation causes to anyone posting a
+// bogus header. Matching only the old field would make this recovery inert.
+// insufficient_funds must never match: no re-sign can fund a wallet.
 func isStaleBlockhashResponse(resp *http.Response) bool {
 	if resp == nil || resp.Body == nil {
 		return false
 	}
-	body, err := io.ReadAll(resp.Body)
-	resp.Body = io.NopCloser(bytes.NewReader(body))
-	if err != nil {
+	original := resp.Body
+	body, err := io.ReadAll(io.LimitReader(original, maxStaleClassifyBytes+1))
+	// Restore the body: the bytes consumed here, then whatever remains unread.
+	resp.Body = &prefixedBody{r: io.MultiReader(bytes.NewReader(body), original), c: original}
+	if err != nil || len(body) > maxStaleClassifyBytes {
 		return false
 	}
 
 	var failure struct {
 		Code           string `json:"code"`
+		Reason         string `json:"reason"`
 		InvalidMessage string `json:"invalidMessage"`
+		// RawMessage because `error` is an object on the Anthropic routes and a
+		// plain string on the OpenAI ones — a typed field would fail the whole
+		// decode on the other dialect.
+		Error json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(body, &failure) != nil {
 		return false
 	}
+	var errText string
+	var nested struct {
+		Message string `json:"message"`
+	}
+	if len(failure.Error) > 0 {
+		if json.Unmarshal(failure.Error, &errText) != nil {
+			_ = json.Unmarshal(failure.Error, &nested)
+		}
+	}
 
 	code := normalizePaymentSignal(failure.Code)
+	reason := normalizePaymentSignal(failure.Reason)
 	detail := normalizePaymentSignal(failure.InvalidMessage)
+	errLabel := normalizePaymentSignal(errText)
+	message := normalizePaymentSignal(nested.Message)
+
+	// PHASE GATE. A settlement-phase rejection is never retried, whatever it
+	// says. Settle has already broadcast a transaction; if that transaction
+	// actually landed and only the confirmation was lost, re-signing pays a
+	// second time for one request. Verify is the safe phase: it runs before any
+	// broadcast, and the route returns 402 without ever reaching settle.
+	//
+	// The phase is not always in `code` — only /v1/chat/completions sets
+	// SETTLEMENT_FAILED. The exa/audio/surf/phone/rpc/pm routes send a bare
+	// {"error":"Payment settlement failed","reason":...}, so the error label
+	// carries it there.
+	if strings.Contains(code, "settlementfailed") ||
+		strings.Contains(errLabel, "settlementfailed") ||
+		strings.Contains(message, "settlementfailed") {
+		return false
+	}
+	verifyPhase := code == "paymentinvalid" ||
+		strings.Contains(errLabel, "verificationfailed") ||
+		strings.Contains(message, "verificationfailed")
+
+	// An explicit stale-blockhash signal names the cause outright and stands on
+	// its own. expired_signature is a broader classification (it also covers a
+	// plainly expired authorization), so it is honoured only on a verify-phase
+	// body, where re-signing cannot double-charge.
 	return code == "paymentblockhashstale" ||
 		strings.Contains(detail, "blockhashnotfound") ||
-		strings.Contains(detail, "blockheightexceeded")
+		strings.Contains(detail, "blockheightexceeded") ||
+		(verifyPhase && (reason == "expiredsignature" || strings.Contains(message, "expiredsignature")))
 }
+
+// prefixedBody re-presents a response body whose leading bytes were consumed
+// for classification, closing the underlying body it wraps.
+type prefixedBody struct {
+	r io.Reader
+	c io.Closer
+}
+
+func (b *prefixedBody) Read(p []byte) (int, error) { return b.r.Read(p) }
+func (b *prefixedBody) Close() error               { return b.c.Close() }
 
 func normalizePaymentSignal(value string) string {
 	value = strings.ToLower(value)
