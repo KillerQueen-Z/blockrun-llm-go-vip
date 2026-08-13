@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	blockrun "github.com/BlockRunAI/blockrun-llm-go"
 )
@@ -23,6 +25,11 @@ type transportMiddleware = func(*http.Request, func(*http.Request) (*http.Respon
 // paymentSigner signs an x402 payment requirement for the resolved chain and
 // returns the base64 payment payload for the PAYMENT-SIGNATURE header.
 type paymentSigner func(paymentHeader, requestURL string) (string, error)
+
+// staleBlockhashRetryBackoffs bound the recovery loop while allowing a cached
+// gateway challenge to roll over. A stale signed transaction must never be
+// replayed: every recovery attempt below obtains a fresh 402 and re-signs it.
+var staleBlockhashRetryBackoffs = []time.Duration{500 * time.Millisecond, 2 * time.Second}
 
 // x402Middleware builds the native-passthrough payment middleware.
 //
@@ -43,6 +50,12 @@ type paymentSigner func(paymentHeader, requestURL string) (string, error)
 // feePayer from them, and the signed transaction only settles through the
 // facilitator that issued that feePayer.
 func x402Middleware(sign paymentSigner, extraHeaders map[string]string) transportMiddleware {
+	return x402MiddlewareWithBackoffs(sign, extraHeaders, staleBlockhashRetryBackoffs)
+}
+
+// x402MiddlewareWithBackoffs exists so the retry state machine can be tested
+// deterministically without sleeping. Production callers use x402Middleware.
+func x402MiddlewareWithBackoffs(sign paymentSigner, extraHeaders map[string]string, staleBackoffs []time.Duration) transportMiddleware {
 	return func(req *http.Request, next func(*http.Request) (*http.Response, error)) (*http.Response, error) {
 		for k, v := range extraHeaders {
 			if req.Header.Get(k) == "" {
@@ -63,36 +76,112 @@ func x402Middleware(sign paymentSigner, extraHeaders map[string]string) transpor
 			req.ContentLength = int64(len(body))
 		}
 
-		resp, err := next(req)
-		if err != nil {
-			return resp, err
-		}
-		if resp.StatusCode != http.StatusPaymentRequired {
-			// Native passthrough: hand the upstream response back untouched.
-			return resp, nil
-		}
-
-		paymentHeader := readPaymentRequirement(resp)
-		_ = resp.Body.Close()
-		if paymentHeader == "" {
-			return resp, &blockrun.PaymentError{Message: "402 response but no payment requirements found"}
-		}
-
-		signature, err := sign(paymentHeader, req.URL.String())
-		if err != nil {
-			return resp, err
-		}
-
-		retry := req.Clone(req.Context())
-		if body != nil {
-			retry.Body = io.NopCloser(bytes.NewReader(body))
-			retry.ContentLength = int64(len(body))
-			retry.GetBody = func() (io.ReadCloser, error) {
-				return io.NopCloser(bytes.NewReader(body)), nil
+		newAttempt := func(signature string) *http.Request {
+			attempt := req.Clone(req.Context())
+			if body != nil {
+				attempt.Body = io.NopCloser(bytes.NewReader(body))
+				attempt.ContentLength = int64(len(body))
+				attempt.GetBody = func() (io.ReadCloser, error) {
+					return io.NopCloser(bytes.NewReader(body)), nil
+				}
 			}
+			attempt.Header.Del("PAYMENT-SIGNATURE")
+			if signature != "" {
+				attempt.Header.Set("PAYMENT-SIGNATURE", signature)
+			}
+			return attempt
 		}
-		retry.Header.Set("PAYMENT-SIGNATURE", signature)
-		return next(retry)
+
+		for staleRetries := 0; ; {
+			// Always begin a payment attempt without a signature. This obtains a
+			// fresh challenge instead of replaying a transaction whose blockhash
+			// the verifier has already rejected.
+			resp, err := next(newAttempt(""))
+			if err != nil {
+				return resp, err
+			}
+			if resp.StatusCode != http.StatusPaymentRequired {
+				// Native passthrough: hand the upstream response back untouched.
+				return resp, nil
+			}
+
+			paymentHeader := readPaymentRequirement(resp)
+			_ = resp.Body.Close()
+			if paymentHeader == "" {
+				return resp, &blockrun.PaymentError{Message: "402 response but no payment requirements found"}
+			}
+
+			signature, err := sign(paymentHeader, req.URL.String())
+			if err != nil {
+				return resp, err
+			}
+
+			paidResp, err := next(newAttempt(signature))
+			if err != nil {
+				return paidResp, err
+			}
+			if paidResp.StatusCode != http.StatusPaymentRequired ||
+				!isStaleBlockhashResponse(paidResp) ||
+				staleRetries >= len(staleBackoffs) {
+				return paidResp, nil
+			}
+
+			_ = paidResp.Body.Close()
+			if err := waitForX402Retry(req, staleBackoffs[staleRetries]); err != nil {
+				return nil, err
+			}
+			staleRetries++
+		}
+	}
+}
+
+// isStaleBlockhashResponse recognizes only explicit, machine-readable stale
+// blockhash failures. transaction_simulation_failed alone is intentionally not
+// enough: it also covers terminal account, balance, and signature failures.
+// The response body is restored so an unhandled 402 remains byte-for-byte
+// available to the official SDK and caller.
+func isStaleBlockhashResponse(resp *http.Response) bool {
+	if resp == nil || resp.Body == nil {
+		return false
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	if err != nil {
+		return false
+	}
+
+	var failure struct {
+		Code           string `json:"code"`
+		InvalidMessage string `json:"invalidMessage"`
+	}
+	if json.Unmarshal(body, &failure) != nil {
+		return false
+	}
+
+	code := normalizePaymentSignal(failure.Code)
+	detail := normalizePaymentSignal(failure.InvalidMessage)
+	return code == "paymentblockhashstale" ||
+		strings.Contains(detail, "blockhashnotfound") ||
+		strings.Contains(detail, "blockheightexceeded")
+}
+
+func normalizePaymentSignal(value string) string {
+	value = strings.ToLower(value)
+	replacer := strings.NewReplacer("_", "", "-", "", " ", "", ":", "")
+	return replacer.Replace(value)
+}
+
+func waitForX402Retry(req *http.Request, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-req.Context().Done():
+		return req.Context().Err()
 	}
 }
 
